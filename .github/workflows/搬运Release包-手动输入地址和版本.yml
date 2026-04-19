@@ -1,0 +1,44 @@
+name: 一键搬运 Release（通用版）
+
+on:
+  workflow_dispatch:
+    inputs:
+      src_repo:
+        description: '源仓库（格式: owner/repo）'
+        required: true
+        default: 'NanmiCoder/cc-haha'
+      tag:
+        description: '要搬运的 Release 版本号 / tag'
+        required: true
+        default: 'v0.1.1'
+
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 暴力搬运 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "开始搬运 ${{ inputs.src_repo }} 的 ${{ inputs.tag }} ..."
+
+          # 下载源 Release 的 assets（没有 assets 也没关系）
+          gh release download ${{ inputs.tag }} -R ${{ inputs.src_repo }} -D ./out || true
+
+          # 获取源 Release 的真实标题和说明
+          TITLE=$(gh release view ${{ inputs.tag }} -R ${{ inputs.src_repo }} --json name --jq '.name' 2>/dev/null || echo "${{ inputs.tag }}")
+          BODY=$(gh release view ${{ inputs.tag }} -R ${{ inputs.src_repo }} --json body --jq '.body' 2>/dev/null || echo "从 ${{ inputs.src_repo }} 搬运而来")
+
+          # 如果目标仓库已有该 Release 就更新，否则创建
+          if gh release view ${{ inputs.tag }} --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "Release 已存在，正在更新标题和说明..."
+            gh release edit ${{ inputs.tag }} --title "$TITLE" --notes "$BODY" --repo ${{ github.repository }}
+          else
+            echo "正在创建新 Release..."
+            gh release create ${{ inputs.tag }} ./out/* --title "$TITLE" --notes "$BODY" --repo ${{ github.repository }} || true
+          fi
+
+          echo "搬运完成！请刷新 Releases 页面查看。"
